@@ -25,8 +25,12 @@ export function ImportProjectButton() {
         const workspaceId = await importWorkspace(fileContent);
         toast.success("Workspace imported.");
         router.push(`/workspace?id=${workspaceId}`);
-      } catch {
-        toast.error("Failed to import workspace. Please check the file.");
+      } catch (err: unknown) {
+        toast.error(
+          err instanceof Error
+            ? err.message
+            : "Failed to import workspace. Please check the file."
+        );
       }
     });
   };

@@ -153,3 +153,83 @@
     transform: translateX(200%);
   }
 }
+
+/* ── Sandpack Full Height & Responsiveness ─────────────────────────────── */
+.sp-wrapper {
+  --sp-layout-height: 100% !important;
+  height: 100% !important;
+  width: 100% !important;
+  display: flex !important;
+  flex-direction: column !important;
+  flex: 1 1 0% !important;
+  min-height: 0 !important;
+}
+
+.sp-layout {
+  height: 100% !important;
+  width: 100% !important;
+  flex: 1 1 0% !important;
+  min-height: 0 !important;
+  max-height: none !important;
+  border: none !important;
+  background: transparent !important;
+}
+
+.sp-stack,
+.sp-preview {
+  height: 100% !important;
+  width: 100% !important;
+  min-height: 0 !important;
+  max-height: none !important;
+  flex: 1 1 0% !important;
+  display: flex !important;
+  flex-direction: column !important;
+  background: transparent !important;
+}
+
+.sp-preview-container {
+  position: relative !important;
+  height: 100% !important;
+  width: 100% !important;
+  min-height: 0 !important;
+  max-height: none !important;
+  flex: 1 1 0% !important;
+  display: flex !important;
+  flex-direction: column !important;
+}
+
+.sp-preview-iframe {
+  height: 100% !important;
+  width: 100% !important;
+  min-height: 0 !important;
+  max-height: none !important;
+  flex: 1 1 0% !important;
+  border: none !important;
+  display: block !important;
+  background: #ffffff !important;
+}
+
+.sp-preview-actions {
+  z-index: 10 !important;
+}
+
+.sp-code-editor,
+.sp-cm,
+.cm-editor,
+.cm-scroller {
+  height: 100% !important;
+  min-height: 0 !important;
+  flex: 1 1 0% !important;
+}
+
+.sp-file-explorer {
+  height: 100% !important;
+  min-height: 0 !important;
+}
+
+.sp-console {
+  height: 100% !important;
+  width: 100% !important;
+  min-height: 0 !important;
+  flex: 1 1 0% !important;
+}

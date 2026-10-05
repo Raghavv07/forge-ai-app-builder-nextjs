@@ -13,10 +13,15 @@ export async function getWorkspaceUser(): Promise<WorkspaceUser> {
   const user = await getCurrentAuthUser();
   if (!user) redirect("/");
 
+  const dbUser = await db.user.findUnique({
+    where: { id: user.id },
+    select: { credits: true, plan: true },
+  });
+
   return {
     id: user.id,
-    credits: 0,
-    plan: "free",
+    credits: dbUser?.credits ?? 10,
+    plan: (dbUser?.plan as WorkspaceUser["plan"]) ?? "free",
   };
 }
 

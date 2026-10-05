@@ -37,14 +37,42 @@ export const AI_APP_RESPONSE_SCHEMA: Schema = {
       description: "Short 2-4 word title for the app, e.g. 'Todo List App'",
     },
     files: {
-      type: Type.OBJECT,
+      type: Type.ARRAY,
       description:
-        "Mapping of relative file path (e.g. '/App.js', '/components/Header.js') to file object containing 'code' string with complete runnable code",
+        "List of all files that make up the React application. The entry point must always be /App.js.",
+      items: {
+        type: Type.OBJECT,
+        properties: {
+          path: {
+            type: Type.STRING,
+            description:
+              "Relative file path starting with '/', e.g. '/App.js' or '/components/Header.js'",
+          },
+          code: {
+            type: Type.STRING,
+            description: "Complete runnable React/JavaScript code for this file",
+          },
+        },
+        required: ["path", "code"],
+      },
     },
     dependencies: {
-      type: Type.OBJECT,
-      description:
-        "npm packages needed by the app mapping package name to version, e.g. 'lucide-react': 'latest'",
+      type: Type.ARRAY,
+      description: "npm packages needed by the app",
+      items: {
+        type: Type.OBJECT,
+        properties: {
+          name: {
+            type: Type.STRING,
+            description: "npm package name, e.g. 'lucide-react'",
+          },
+          version: {
+            type: Type.STRING,
+            description: "package version string, typically 'latest'",
+          },
+        },
+        required: ["name", "version"],
+      },
     },
   },
   required: ["assistantMessage", "title", "files"],

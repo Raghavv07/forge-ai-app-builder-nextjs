@@ -74,13 +74,13 @@ RULES:
 {
   "assistantMessage": "<brief explanation of what you built/changed>",
   "title": "<short 2-4 word title for the app, e.g. 'Todo List App'>",
-  "files": {
-    "/App.js": { "code": "<full file content>" },
-    "/components/SomeComponent.js": { "code": "<full file content>" }
-  },
-  "dependencies": {
-    "some-package": "latest"
-  }
+  "files": [
+    { "path": "/App.js", "code": "<full file content>" },
+    { "path": "/components/SomeComponent.js", "code": "<full file content>" }
+  ],
+  "dependencies": [
+    { "name": "lucide-react", "version": "latest" }
+  ]
 }
 3. Use React (functional components + hooks). Do NOT use TypeScript in generated files.
 4. Use Tailwind CSS for all styling. Do not use CSS modules or inline styles unless absolutely necessary.
@@ -224,16 +224,29 @@ export async function POST(request: NextRequest) {
 
         // ── Parse and validate the complete JSON response with Zod 4 ─────────
 
-        const cleanJson = accumulated
-          .trim()
-          .replace(/^```json\s*/i, "")
-          .replace(/^```\s*/i, "")
-          .replace(/\s*```$/i, "");
+        let cleanJson = accumulated.trim();
+        const jsonBlockMatch = cleanJson.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
+        if (jsonBlockMatch && jsonBlockMatch[1]) {
+          cleanJson = jsonBlockMatch[1].trim();
+        } else {
+          cleanJson = cleanJson
+            .replace(/^```json\s*/i, "")
+            .replace(/^```\s*/i, "")
+            .replace(/\s*```$/i, "")
+            .trim();
+        }
+
+        const firstBrace = cleanJson.indexOf("{");
+        const lastBrace = cleanJson.lastIndexOf("}");
+        if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
+          cleanJson = cleanJson.substring(firstBrace, lastBrace + 1);
+        }
 
         let rawParsed: unknown;
         try {
           rawParsed = JSON.parse(cleanJson);
         } catch {
+          console.error("[gen-ai-code] Failed to parse JSON:", cleanJson);
           enqueue(
             sseEvent("error", {
               message: "AI returned invalid JSON. Please try again.",
@@ -245,6 +258,12 @@ export async function POST(request: NextRequest) {
 
         const aiValidation = aiGeneratedCodeSchema.safeParse(rawParsed);
         if (!aiValidation.success) {
+          console.error(
+            "[gen-ai-code] AI validation failed:",
+            aiValidation.error.issues,
+            "rawParsed:",
+            JSON.stringify(rawParsed, null, 2)
+          );
           enqueue(
             sseEvent("error", {
               message: `AI generated an invalid app structure: ${z.prettifyError(
@@ -262,7 +281,6 @@ export async function POST(request: NextRequest) {
           files,
           dependencies,
         } = aiValidation.data;
-
 
         // ── Validate npm packages ──────────────────────────────────────────────
 
@@ -287,22 +305,64 @@ export async function POST(request: NextRequest) {
           { role: "assistant", content: assistantMessage },
         ];
 
-        const workspace = workspaceId
-          ? await db.workspace.update({
-              where: { id: workspaceId, userId },
-              data: {
-                messages: updatedMessages as unknown as Prisma.InputJsonValue,
-                fileData: newFileData as unknown as Prisma.InputJsonValue,
-              },
-            })
-          : await db.workspace.create({
-              data: {
-                userId,
-                title: aiTitle ?? fallbackTitle,
-                messages: updatedMessages as unknown as Prisma.InputJsonValue,
-                fileData: newFileData as unknown as Prisma.InputJsonValue,
-              },
-            });
+        let workspace;
+        try {
+          workspace = workspaceId
+            ? await db.workspace.update({
+                where: { id: workspaceId, userId },
+                data: {
+                  title: aiTitle ?? undefined,
+                  messages: updatedMessages as unknown as Prisma.InputJsonValue,
+                  fileData: newFileData as unknown as Prisma.InputJsonValue,
+                },
+              })
+            : await db.workspace.create({
+                data: {
+                  userId,
+                  title: aiTitle ?? fallbackTitle,
+                  messages: updatedMessages as unknown as Prisma.InputJsonValue,
+                  fileData: newFileData as unknown as Prisma.InputJsonValue,
+                },
+              });
+        } catch (dbErr: unknown) {
+          if (
+            workspaceId &&
+            typeof dbErr === "object" &&
+            dbErr !== null &&
+            "code" in dbErr &&
+            dbErr.code === "P2025"
+          ) {
+            // Workspace not found in DB — fallback to creating a new workspace
+            try {
+              workspace = await db.workspace.create({
+                data: {
+                  userId,
+                  title: aiTitle ?? fallbackTitle,
+                  messages: updatedMessages as unknown as Prisma.InputJsonValue,
+                  fileData: newFileData as unknown as Prisma.InputJsonValue,
+                },
+              });
+            } catch (createErr) {
+              console.error("[gen-ai-code] Fallback workspace create error:", createErr);
+              enqueue(
+                sseEvent("error", {
+                  message: "Failed to save workspace. Please try again.",
+                })
+              );
+              controller.close();
+              return;
+            }
+          } else {
+            console.error("[gen-ai-code] DB error:", dbErr);
+            enqueue(
+              sseEvent("error", {
+                message: "Failed to save workspace. Please try again.",
+              })
+            );
+            controller.close();
+            return;
+          }
+        }
 
         // ── Emit final result ──────────────────────────────────────────────────
 
@@ -314,14 +374,51 @@ export async function POST(request: NextRequest) {
           })
         );
       } catch (err) {
+        if (
+          request.signal.aborted ||
+          (err instanceof Error && err.name === "AbortError")
+        ) {
+          return;
+        }
+
         console.error("[gen-ai-code] stream error:", err);
-        enqueue(
-          sseEvent("error", {
-            message: "Something went wrong. Please try again.",
-          })
-        );
+
+        let errorMessage = "Something went wrong. Please try again.";
+        if (err instanceof Error) {
+          if (
+            err.message.includes("429") ||
+            err.message.toLowerCase().includes("quota") ||
+            err.message.toLowerCase().includes("resource has been exhausted")
+          ) {
+            errorMessage =
+              "AI rate limit or quota exceeded. Please wait a moment and try again.";
+          } else if (
+            err.message.includes("503") ||
+            err.message.toLowerCase().includes("overloaded")
+          ) {
+            errorMessage =
+              "AI service is temporarily busy. Please try again in a few seconds.";
+          } else if (err.message.toLowerCase().includes("safety")) {
+            errorMessage =
+              "Prompt or response was flagged by safety filters. Please rephrase.";
+          } else {
+            errorMessage = err.message;
+          }
+        }
+
+        try {
+          enqueue(
+            sseEvent("error", {
+              message: errorMessage,
+            })
+          );
+        } catch {
+          // stream already closed
+        }
       } finally {
-        controller.close();
+        try {
+          controller.close();
+        } catch {}
       }
     },
   });

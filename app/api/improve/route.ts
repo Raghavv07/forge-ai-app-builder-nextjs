@@ -4,6 +4,7 @@ import { Agent, createTool } from "@cline/sdk";
 import { z } from "zod";
 import { db, type Prisma } from "@/lib/prisma";
 import { aj } from "@/lib/arcjet";
+import { DEFAULT_GEMINI_MODEL } from "@/lib/gemini";
 import { improveRequestSchema, type FileData } from "@/types/workspace";
 
 // ─── SSE helper ───────────────────────────────────────────────────────────────
@@ -210,7 +211,7 @@ export async function POST(request: NextRequest) {
 
       const agent = new Agent({
         providerId: "gemini",
-        modelId: "gemini-3.5-flash",
+        modelId: process.env.GEMINI_MODEL || DEFAULT_GEMINI_MODEL || "gemini-2.5-flash",
         apiKey,
         maxIterations: 8,
         systemPrompt: `You are an expert React developer improving a live browser preview app.

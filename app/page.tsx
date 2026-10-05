@@ -33,7 +33,10 @@ export default function LandingPage() {
       window.addEventListener("focus", callback);
       return () => window.removeEventListener("focus", callback);
     },
-    () => typeof document !== "undefined" && document.cookie.includes("forge_guest_session="),
+    () =>
+      typeof document !== "undefined" &&
+      (document.cookie.includes("forge_guest_session=") ||
+        document.cookie.includes("forge_guest_active=1")),
     () => false
   );
 
@@ -81,7 +84,7 @@ export default function LandingPage() {
   return (
     <main className="min-h-screen bg-[#0a0a0a] selection:bg-white/20">
       {/* ── HERO ──────────────────────────────────────────────────────────── */}
-      <section className="relative flex flex-col items-center overflow-hidden px-4 pb-24 pt-40 text-center">
+      <section className="relative flex flex-col items-center overflow-hidden px-4 pb-24 pt-24 text-center">
         <HoleBackground
           strokeColor="rgba(255,255,255,0.05)" // blur
           className="absolute inset-0 h-full w-full"

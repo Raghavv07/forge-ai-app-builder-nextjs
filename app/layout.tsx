@@ -95,12 +95,8 @@ export default function RootLayout({
         theme: dark,
       }}
     >
-
-
-
-
       <html lang="en" suppressHydrationWarning>
-        <body className={`${lora.variable} ${dmSans.variable} font-sans`}>
+        <body className={`${lora.variable} ${dmSans.variable} font-sans pt-16`}>
           <ThemeProvider
             attribute="class"
             defaultTheme="system"

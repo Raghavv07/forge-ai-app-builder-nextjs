@@ -19,7 +19,7 @@ const aj = process.env.ARCJET_KEY
     })
   : null;
 
-export default clerkMiddleware(async (_auth, req) => {
+export const proxy = clerkMiddleware(async (_auth, req) => {
   // Arcjet network security evaluation
   if (aj) {
     const decision = await aj.protect(req);
@@ -46,8 +46,12 @@ export default clerkMiddleware(async (_auth, req) => {
     }
   }
 
-  return NextResponse.next();
+  const response = NextResponse.next();
+  response.headers.set("Permissions-Policy", "unload=*");
+  return response;
 });
+
+export default proxy;
 
 export const config = {
   matcher: [

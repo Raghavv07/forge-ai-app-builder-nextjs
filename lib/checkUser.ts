@@ -1,5 +1,6 @@
 import { currentUser } from "@clerk/nextjs/server";
 import { db } from "./prisma";
+import { PLANS } from "./constants";
 
 export const checkUser = async () => {
   const user = await currentUser();
@@ -14,14 +15,17 @@ export const checkUser = async () => {
       return existing;
     }
 
+    const fullName = `${user.firstName ?? ""} ${user.lastName ?? ""}`.trim();
+    const fallbackName = fullName || user.username || "Builder";
+
     // New user — create record in database
     return await db.user.create({
       data: {
         clerkId: user.id,
-        name: `${user.firstName ?? ""} ${user.lastName ?? ""}`.trim(),
+        name: fallbackName,
         email: user.emailAddresses[0]?.emailAddress ?? "",
         imageUrl: user.imageUrl ?? "",
-        credits: 0,
+        credits: PLANS.free.credits,
         plan: "free",
       },
     });

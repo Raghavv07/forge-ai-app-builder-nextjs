@@ -42,7 +42,11 @@ export function ProjectCard({ projects }: ProjectCardProps) {
                 {title}
               </p>
               <DeleteProjectModal project={project}>
-                <span className="relative z-10 text-white/20 hover:text-red-400">
+                <span
+                  onClick={(e) => e.stopPropagation()}
+                  className="relative z-10 p-1 text-white/20 hover:text-red-400 transition-colors cursor-pointer"
+                  title="Delete project"
+                >
                   <Trash2 className="h-3.5 w-3.5" />
                 </span>
               </DeleteProjectModal>

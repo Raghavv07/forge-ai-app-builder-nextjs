@@ -46,11 +46,52 @@ export const aiGeneratedCodeSchema = z.object({
   assistantMessage: z.string().default("Application generated successfully."),
   title: z.string().optional(),
   files: z
-    .record(z.string(), fileItemSchema)
+    .union([
+      z
+        .array(
+          z.object({
+            path: z.string(),
+            code: z.string(),
+          })
+        )
+        .transform((arr) => {
+          const record: Record<string, { code: string }> = {};
+          for (const item of arr) {
+            const p = item.path.startsWith("/") ? item.path : `/${item.path}`;
+            record[p] = { code: item.code };
+          }
+          return record;
+        }),
+      z.record(
+        z.string(),
+        z.union([
+          fileItemSchema,
+          z.string().transform((code) => ({ code })),
+        ])
+      ),
+    ])
     .refine((files) => Object.keys(files).length > 0, {
       error: "AI response must contain at least one valid file",
     }),
-  dependencies: z.record(z.string(), z.string()).default({}),
+  dependencies: z
+    .union([
+      z
+        .array(
+          z.object({
+            name: z.string(),
+            version: z.string().default("latest"),
+          })
+        )
+        .transform((arr) => {
+          const record: Record<string, string> = {};
+          for (const item of arr) {
+            record[item.name] = item.version;
+          }
+          return record;
+        }),
+      z.record(z.string(), z.string()),
+    ])
+    .default({}),
 });
 
 export const improveRequestSchema = z.object({

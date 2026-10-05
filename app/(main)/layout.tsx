@@ -10,5 +10,5 @@ export default async function MainLayout({
   const user = await getCurrentAuthUser();
   if (!user) redirect("/");
 
-  return <div className="mt-16">{children}</div>;
+  return <>{children}</>;
 }

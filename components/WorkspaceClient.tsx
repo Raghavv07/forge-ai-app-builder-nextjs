@@ -190,11 +190,40 @@ export function WorkspaceClient({
                   `/workspace?id=${event.workspaceId}`
                 );
               } else if (event.type === "error") {
-                throw new Error(event.message);
+                toast.error(event.message || "Generation failed. Please try again.");
+                setMessages((prev) => prev.slice(0, -1));
+                return;
               }
             } catch {
               // skip malformed SSE lines
             }
+          }
+        }
+
+        // Process any remaining data in the buffer after stream ends
+        if (buffer.trim() && buffer.startsWith("data: ")) {
+          try {
+            const event = JSON.parse(buffer.slice(6));
+            if (event.type === "done") {
+              completeSteps();
+              setWorkspaceId(event.workspaceId);
+              setFileData(event.fileData);
+              setMessages((prev) => [
+                ...prev,
+                { role: "assistant", content: event.assistantMessage },
+              ]);
+              window.history.replaceState(
+                null,
+                "",
+                `/workspace?id=${event.workspaceId}`
+              );
+            } else if (event.type === "error") {
+              toast.error(event.message || "Generation failed. Please try again.");
+              setMessages((prev) => prev.slice(0, -1));
+              return;
+            }
+          } catch {
+            // ignore malformed trailing buffer
           }
         }
       } catch (err) {
@@ -203,7 +232,7 @@ export function WorkspaceClient({
           setMessages((prev) => prev.slice(0, -1));
           return;
         }
-        console.error(err);
+        console.warn("[WorkspaceClient] Generation error:", err instanceof Error ? err.message : err);
         toast.error(
           err instanceof Error ? err.message : "Something went wrong."
         );
@@ -266,11 +295,6 @@ export function WorkspaceClient({
         let buffer = "";
         let accumulatedThinking = "";
 
-        // Accumulate patches locally — only apply to state at done.
-        // Applying on every file_patch event would update fileData state,
-        // which feeds into SandpackProvider and can cause remounts mid-stream.
-        const localPatches: Record<string, { code: string }> = {};
-
         while (true) {
           const { done, value } = await reader.read();
           if (done) break;
@@ -296,12 +320,20 @@ export function WorkspaceClient({
                   return updated;
                 });
               } else if (event.type === "file_patch") {
-                // Accumulate locally — don't touch state yet
-                localPatches[event.path] = { code: event.code };
+                // Live update fileData so Sandpack updates preview incrementally
+                setFileData((prev) => {
+                  if (!prev) return prev;
+                  return {
+                    ...prev,
+                    files: {
+                      ...prev.files,
+                      [event.path]: { code: event.code },
+                    },
+                  };
+                });
               } else if (event.type === "done") {
-                // Apply all patches at once now that the stream is complete
+                // Apply all final files and summary once stream finishes
                 setFileData(event.fileData);
-                // Replace thinking text with clean summary
                 setMessages((prev) => {
                   const updated = [...prev];
                   updated[updated.length - 1] = {
@@ -311,11 +343,37 @@ export function WorkspaceClient({
                   return updated;
                 });
               } else if (event.type === "error") {
-                throw new Error(event.message);
+                toast.error(event.message || "Improve failed. Please try again.");
+                setMessages((prev) => prev.slice(0, -2));
+                return;
               }
             } catch {
               // skip malformed SSE lines
             }
+          }
+        }
+
+        // Process any remaining data in the buffer after stream ends
+        if (buffer.trim() && buffer.startsWith("data: ")) {
+          try {
+            const event = JSON.parse(buffer.slice(6));
+            if (event.type === "done") {
+              setFileData(event.fileData);
+              setMessages((prev) => {
+                const updated = [...prev];
+                updated[updated.length - 1] = {
+                  role: "assistant",
+                  content: event.summary,
+                };
+                return updated;
+              });
+            } else if (event.type === "error") {
+              toast.error(event.message || "Improve failed. Please try again.");
+              setMessages((prev) => prev.slice(0, -2));
+              return;
+            }
+          } catch {
+            // ignore malformed trailing buffer
           }
         }
       } catch (err) {
@@ -324,6 +382,7 @@ export function WorkspaceClient({
           setMessages((prev) => prev.slice(0, -2));
           return;
         }
+        console.warn("[WorkspaceClient] Improve error:", err instanceof Error ? err.message : err);
         toast.error(err instanceof Error ? err.message : "Improve failed.");
         setMessages((prev) => prev.slice(0, -2));
       } finally {
@@ -353,7 +412,7 @@ export function WorkspaceClient({
       </div>
 
       {/* Workspace — visible only on md+ screens */}
-      <div className="hidden md:flex h-[calc(100vh-3.5rem)] overflow-hidden bg-[#0a0a0a]">
+      <div className="hidden md:flex h-[calc(100vh-4rem)] overflow-hidden bg-[#0a0a0a]">
         <ChatPanel
           isImproving={isImproving}
           messages={messages}

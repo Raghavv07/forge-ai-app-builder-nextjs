@@ -3,6 +3,7 @@
 import { cookies } from "next/headers";
 import { db } from "@/lib/prisma";
 import { GUEST_COOKIE_NAME } from "@/lib/auth-helper";
+import { PLANS } from "@/lib/constants";
 import { revalidatePath } from "next/cache";
 
 export async function continueAsGuest(rawName?: string) {
@@ -21,7 +22,7 @@ export async function continueAsGuest(rawName?: string) {
         name: trimmedName,
         email: guestEmail,
         imageUrl: avatarUrl,
-        credits: 0,
+        credits: PLANS.free.credits,
         plan: "free",
       },
     });
@@ -29,10 +30,18 @@ export async function continueAsGuest(rawName?: string) {
     const cookieStore = await cookies();
     cookieStore.set(GUEST_COOKIE_NAME, guestClerkId, {
       path: "/",
-      httpOnly: true,
+      httpOnly: false,
       secure: process.env.NODE_ENV === "production",
       sameSite: "lax",
       maxAge: 60 * 60 * 24 * 30, // 30 days
+    });
+
+    cookieStore.set("forge_guest_active", "1", {
+      path: "/",
+      httpOnly: false,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "lax",
+      maxAge: 60 * 60 * 24 * 30,
     });
 
     revalidatePath("/", "layout");
@@ -55,6 +64,7 @@ export async function continueAsGuest(rawName?: string) {
 export async function exitGuestSession() {
   const cookieStore = await cookies();
   cookieStore.delete(GUEST_COOKIE_NAME);
+  cookieStore.delete("forge_guest_active");
   revalidatePath("/", "layout");
   return { success: true };
 }
