@@ -44,41 +44,46 @@ export async function POST(request: NextRequest) {
 
   // ── Arcjet: rate limit & prompt injection protection ─────────────────────
   if (aj) {
-    const decision = await aj.protect(request, {
-      requested: 1,
-      userId: authUser.clerkId,
-      detectPromptInjectionMessage: userRequest,
-    });
+    try {
+      const decision = await aj.protect(request, {
+        requested: 1,
+        userId: authUser.clerkId,
+        detectPromptInjectionMessage: userRequest,
+      });
 
-    if (decision.isDenied()) {
-      if (decision.reason.isRateLimit()) {
+      if (decision.isDenied()) {
+        if (decision.reason.isRateLimit()) {
+          return Response.json(
+            {
+              message:
+                "Too many improvement requests. Please wait a minute before requesting again.",
+            },
+            { status: 429 }
+          );
+        }
+        if (decision.reason.isPromptInjection()) {
+          console.warn("[Arcjet] Prompt injection flagged in improve:", userRequest);
+          return Response.json(
+            {
+              message:
+                "Prompt injection detected. Improvement request rejected for security.",
+            },
+            { status: 400 }
+          );
+        }
         return Response.json(
-          {
-            message:
-              "Too many improvement requests. Please wait a minute before requesting again.",
-          },
-          { status: 429 }
+          { message: "Request blocked by security policy." },
+          { status: 403 }
         );
       }
-      if (decision.reason.isPromptInjection()) {
-        return Response.json(
-          {
-            message:
-              "Prompt injection detected. Improvement request rejected for security.",
-          },
-          { status: 400 }
-        );
-      }
-      return Response.json(
-        { message: "Request blocked by security policy." },
-        { status: 403 }
-      );
+    } catch (arcjetError) {
+      console.warn("[Arcjet Protect Non-fatal Error in improve]:", arcjetError);
     }
   }
 
   // ── Auth verification ──────────────────────────────────────────────────────
 
-  const user = await db.user.findUnique({
+  const user = await db.user.findFirst({
     where: { id: userId, clerkId: authUser.clerkId },
     select: { id: true },
   });

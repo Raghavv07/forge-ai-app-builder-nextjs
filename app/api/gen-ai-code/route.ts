@@ -111,6 +111,10 @@ export async function POST(request: NextRequest) {
 
   const parsedBody = genAiCodeRequestSchema.safeParse(body);
   if (!parsedBody.success) {
+    console.error(
+      "[api/gen-ai-code] Zod Validation Error:",
+      parsedBody.error.issues
+    );
     return Response.json(
       {
         message: "Invalid request payload",
@@ -127,33 +131,38 @@ export async function POST(request: NextRequest) {
     const lastUserMessage =
       [...messages].reverse().find((m) => m.role === "user")?.content ?? "";
 
-    const decision = await aj.protect(request, {
-      requested: 1,
-      userId: authUser.clerkId,
-      detectPromptInjectionMessage: lastUserMessage,
-    });
+    try {
+      const decision = await aj.protect(request, {
+        requested: 1,
+        userId: authUser.clerkId,
+        detectPromptInjectionMessage: lastUserMessage,
+      });
 
-    if (decision.isDenied()) {
-      if (decision.reason.isRateLimit()) {
+      if (decision.isDenied()) {
+        if (decision.reason.isRateLimit()) {
+          return Response.json(
+            { message: "Too many generation requests. Please wait a minute." },
+            { status: 429 }
+          );
+        }
+        if (decision.reason.isPromptInjection()) {
+          console.warn("[Arcjet] Prompt injection flagged:", lastUserMessage);
+          return Response.json(
+            { message: "Prompt injection detected. Request rejected for security." },
+            { status: 400 }
+          );
+        }
         return Response.json(
-          { message: "Too many generation requests. Please wait a minute." },
-          { status: 429 }
+          { message: "Request blocked by security policy." },
+          { status: 403 }
         );
       }
-      if (decision.reason.isPromptInjection()) {
-        return Response.json(
-          { message: "Prompt injection detected. Request rejected for security." },
-          { status: 400 }
-        );
-      }
-      return Response.json(
-        { message: "Request blocked by security policy." },
-        { status: 403 }
-      );
+    } catch (arcjetError) {
+      console.warn("[Arcjet Protect Non-fatal Error]:", arcjetError);
     }
   }
 
-  const user = await db.user.findUnique({
+  const user = await db.user.findFirst({
     where: { id: userId, clerkId: authUser.clerkId },
     select: { id: true },
   });

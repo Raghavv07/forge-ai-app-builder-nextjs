@@ -32,9 +32,9 @@ export const aj = isArcjetConfigured
           capacity: 5,
         }),
 
-        // Prompt injection guard: Analyzes prompt for jailbreaks/overrides
+        // Prompt injection guard: Monitors prompts in DRY_RUN to prevent false positive blocks on legit app instructions
         detectPromptInjection({
-          mode: "LIVE",
+          mode: "DRY_RUN",
         }),
       ],
     })

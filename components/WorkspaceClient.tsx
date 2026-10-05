@@ -149,7 +149,14 @@ export function WorkspaceClient({
           setMessages((prev) => prev.slice(0, -1));
           return;
         }
-        if (!res.ok || !res.body) throw new Error("Generation failed");
+        if (!res.ok || !res.body) {
+          const errData = await res.json().catch(() => null);
+          const errorMsg =
+            errData?.message ||
+            (typeof errData?.error === "string" ? errData.error : null) ||
+            "Generation failed";
+          throw new Error(errorMsg);
+        }
 
         const reader = res.body.getReader();
         const decoder = new TextDecoder();
@@ -245,7 +252,14 @@ export function WorkspaceClient({
           }),
         });
 
-        if (!res.ok || !res.body) throw new Error("Improve failed");
+        if (!res.ok || !res.body) {
+          const errData = await res.json().catch(() => null);
+          const errorMsg =
+            errData?.message ||
+            (typeof errData?.error === "string" ? errData.error : null) ||
+            "Improve failed";
+          throw new Error(errorMsg);
+        }
 
         const reader = res.body.getReader();
         const decoder = new TextDecoder();

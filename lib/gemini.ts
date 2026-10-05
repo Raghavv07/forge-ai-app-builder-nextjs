@@ -21,7 +21,7 @@ export function getGenAI(): GoogleGenAI {
 // ─── Default Model & Settings ─────────────────────────────────────────────────
 
 export const DEFAULT_GEMINI_MODEL =
-  process.env.GEMINI_MODEL || "gemini-3.5-flash";
+  process.env.GEMINI_MODEL || "gemini-2.5-flash";
 
 // ─── Strict Structured Output Schema ──────────────────────────────────────────
 

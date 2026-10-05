@@ -4,21 +4,27 @@ import { z } from "zod";
 
 export const messageRoleSchema = z.enum(["user", "assistant"]);
 
-export const messageSchema = z.object({
-  role: messageRoleSchema,
-  content: z.string(),
-  imageUrl: z.string().optional(),
-});
+export const messageSchema = z
+  .object({
+    role: messageRoleSchema,
+    content: z.string(),
+    imageUrl: z.string().nullable().optional(),
+  })
+  .passthrough();
 
-export const fileItemSchema = z.object({
-  code: z.string(),
-});
+export const fileItemSchema = z
+  .object({
+    code: z.string().default(""),
+  })
+  .passthrough();
 
-export const fileDataSchema = z.object({
-  files: z.record(z.string(), fileItemSchema),
-  dependencies: z.record(z.string(), z.string()).default({}),
-  title: z.string().optional(),
-});
+export const fileDataSchema = z
+  .object({
+    files: z.record(z.string(), fileItemSchema).default({}),
+    dependencies: z.record(z.string(), z.string()).default({}),
+    title: z.string().nullable().optional(),
+  })
+  .passthrough();
 
 export const statusStepSchema = z.object({
   label: z.string(),

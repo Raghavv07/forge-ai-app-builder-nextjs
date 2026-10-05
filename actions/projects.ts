@@ -33,7 +33,7 @@ export async function getUserProjects(): Promise<ProjectSummary[]> {
   });
 
   return workspaces.map((w) => {
-    const msgs = Array.isArray(w.messages) ? w.messages : [];
+    const msgs = (Array.isArray(w.messages) ? w.messages : []) as unknown[];
     const firstUserMsg = msgs.find(
       (m): m is Message => isMessage(m) && m.role === "user"
     );
