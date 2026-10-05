@@ -27,6 +27,19 @@ const nextConfig = {
     "@cline/llms",
     "@cline/shared",
   ],
+  async headers() {
+    return [
+      {
+        source: "/(.*)",
+        headers: [
+          {
+            key: "Permissions-Policy",
+            value: "unload=*",
+          },
+        ],
+      },
+    ];
+  },
 } satisfies NextConfig;
 
 export default nextConfig;
