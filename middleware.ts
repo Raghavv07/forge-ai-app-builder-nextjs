@@ -2,7 +2,7 @@ import arcjet, { detectBot, shield } from "@arcjet/next";
 import { clerkMiddleware } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
 
-// ─── Global Arcjet Client (Next.js 16 Proxy) ──────────────────────────────────
+// ─── Global Arcjet Client ─────────────────────────────────────────────────────
 // Evaluates network-level security on every incoming request.
 // Allows search engines and social preview bots for SEO & link unfurling.
 // Initializes safely if ARCJET_KEY is not yet set in environment.
@@ -19,7 +19,7 @@ const aj = process.env.ARCJET_KEY
     })
   : null;
 
-const proxyHandler = clerkMiddleware(async (_auth, req) => {
+export default clerkMiddleware(async (_auth, req) => {
   // Arcjet network security evaluation
   if (aj) {
     const decision = await aj.protect(req);
@@ -48,9 +48,6 @@ const proxyHandler = clerkMiddleware(async (_auth, req) => {
 
   return NextResponse.next();
 });
-
-export const proxy = proxyHandler;
-export default proxyHandler;
 
 export const config = {
   matcher: [
