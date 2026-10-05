@@ -1,11 +1,14 @@
 import React from "react";
+import { getCurrentAuthUser } from "@/lib/auth-helper";
+import { redirect } from "next/navigation";
 
-const layout = ({
+export default async function MainLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
-}>) => {
-  return <div className="mt-16">{children}</div>;
-};
+}>) {
+  const user = await getCurrentAuthUser();
+  if (!user) redirect("/");
 
-export default layout;
+  return <div className="mt-16">{children}</div>;
+}

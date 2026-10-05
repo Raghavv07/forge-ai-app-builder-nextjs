@@ -1,4 +1,4 @@
-import { auth } from "@clerk/nextjs/server";
+import { getCurrentAuthUser } from "@/lib/auth-helper";
 import { redirect } from "next/navigation";
 import { Zap } from "lucide-react";
 import { ProjectCard } from "@/components/ProjectCard";
@@ -39,8 +39,8 @@ function EmptyState() {
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default async function ProjectsPage() {
-  const { userId } = await auth();
-  if (!userId) redirect("/");
+  const authUser = await getCurrentAuthUser();
+  if (!authUser) redirect("/");
 
   const projects = await getUserProjects();
 

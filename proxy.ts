@@ -1,11 +1,6 @@
 import arcjet, { detectBot, shield } from "@arcjet/next";
-import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
+import { clerkMiddleware } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
-
-const isProtectedRoute = createRouteMatcher([
-  "/workspace(.*)",
-  "/projects(.*)",
-]);
 
 // ─── Global Arcjet Client (Next.js 16 Proxy) ──────────────────────────────────
 // Evaluates network-level security on every incoming request.
@@ -24,7 +19,7 @@ const aj = process.env.ARCJET_KEY
     })
   : null;
 
-const proxyHandler = clerkMiddleware(async (auth, req) => {
+const proxyHandler = clerkMiddleware(async (_auth, req) => {
   // Arcjet network security evaluation
   if (aj) {
     const decision = await aj.protect(req);
@@ -48,16 +43,6 @@ const proxyHandler = clerkMiddleware(async (auth, req) => {
         );
       }
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
-  }
-
-  // Auth guard — allow access if Clerk authenticated OR guest session cookie is present
-  if (isProtectedRoute(req)) {
-    const hasGuestCookie = Boolean(
-      req.cookies.get("forge_guest_session")?.value
-    );
-    if (!hasGuestCookie) {
-      await auth.protect();
     }
   }
 
