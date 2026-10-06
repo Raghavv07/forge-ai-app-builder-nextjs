@@ -16,6 +16,12 @@ import {
   AI_APP_RESPONSE_SCHEMA,
   buildGeminiContents,
 } from "@/lib/gemini";
+import {
+  generateGroqCodeStream,
+  getGroqApiKey,
+  DEFAULT_GROQ_MODEL,
+} from "@/lib/groq";
+import { extractAndParseJson } from "@/lib/json-repair";
 
 // ─── SSE helper ───────────────────────────────────────────────────────────────
 
@@ -171,6 +177,12 @@ export async function POST(request: NextRequest) {
     return Response.json({ message: "User not found" }, { status: 404 });
 
   const encoder = new TextEncoder();
+  const lastUserPrompt =
+    [...messages].reverse().find((m) => m.role === "user")?.content ?? "New generation";
+
+  console.log(
+    `\n[gen-ai-code] 🚀 Generation requested | User: ${userId} | Prompt: "${lastUserPrompt.slice(0, 60)}..." | Model: ${DEFAULT_GEMINI_MODEL}`
+  );
 
   const stream = new ReadableStream({
     async start(controller) {
@@ -178,91 +190,170 @@ export async function POST(request: NextRequest) {
         controller.enqueue(encoder.encode(chunk));
 
       try {
-        const ai = getGenAI();
-        const contents = buildGeminiContents(messages, fileData ?? null);
-
-        const geminiStream = await ai.models.generateContentStream({
-          model: DEFAULT_GEMINI_MODEL,
-          contents,
-          config: {
-            abortSignal: request.signal,
-            systemInstruction: SYSTEM_PROMPT,
-            temperature: 0.7,
-            responseMimeType: "application/json",
-            responseSchema: AI_APP_RESPONSE_SCHEMA,
-            thinkingConfig: {
-              includeThoughts: true,
-            },
-          },
-        });
-
         let accumulated = ""; // final JSON output
-        let lastEmitTime = 0; // throttle thought emissions
+        let usedProvider = "gemini";
 
-        for await (const chunk of geminiStream) {
-          const parts = chunk.candidates?.[0]?.content?.parts ?? [];
+        try {
+          const ai = getGenAI();
+          const contents = buildGeminiContents(messages, fileData ?? null);
 
-          for (const part of parts) {
-            if (!part.text) continue;
+          let geminiStream;
+          let activeModel = DEFAULT_GEMINI_MODEL;
+          try {
+            geminiStream = await ai.models.generateContentStream({
+              model: activeModel,
+              contents,
+              config: {
+                abortSignal: request.signal,
+                systemInstruction: SYSTEM_PROMPT,
+                temperature: 0.7,
+                maxOutputTokens: 8192,
+                responseMimeType: "application/json",
+                responseSchema: AI_APP_RESPONSE_SCHEMA,
+                thinkingConfig: {
+                  includeThoughts: true,
+                },
+              },
+            });
+          } catch (initialModelErr: unknown) {
+            const errMsg = initialModelErr instanceof Error ? initialModelErr.message : String(initialModelErr);
+            const isModelOrServiceIssue =
+              errMsg.includes("503") ||
+              errMsg.includes("404") ||
+              errMsg.includes("not found") ||
+              errMsg.includes("experiencing high demand") ||
+              errMsg.includes("UNAVAILABLE");
 
-            if (part.thought) {
-              // Extract just the short label — not the full wall of text
-              const now = Date.now();
-              if (now - lastEmitTime > 600) {
-                const label = extractThoughtLabel(part.text);
-                if (label) {
-                  enqueue(sseEvent("status", { message: label }));
-                  lastEmitTime = now;
+            if (isModelOrServiceIssue) {
+              const fallbackModels = ["gemini-3.5-flash", "gemini-3-flash-preview", "gemini-2.5-flash"].filter(
+                (m) => m !== activeModel
+              );
+
+              let succeeded = false;
+              for (const fallback of fallbackModels) {
+                try {
+                  console.warn(
+                    `[gen-ai-code] ⚠️ Model "${activeModel}" unavailable. Attempting fallback to "${fallback}"...`
+                  );
+                  activeModel = fallback;
+                  geminiStream = await ai.models.generateContentStream({
+                    model: activeModel,
+                    contents,
+                    config: {
+                      abortSignal: request.signal,
+                      systemInstruction: SYSTEM_PROMPT,
+                      temperature: 0.7,
+                      maxOutputTokens: 8192,
+                      responseMimeType: "application/json",
+                      responseSchema: AI_APP_RESPONSE_SCHEMA,
+                      thinkingConfig: {
+                        includeThoughts: true,
+                      },
+                    },
+                  });
+                  succeeded = true;
+                  break;
+                } catch {
+                  // try next fallback
                 }
               }
+
+              if (!succeeded) {
+                throw initialModelErr;
+              }
             } else {
-              // Actual JSON output
-              accumulated += part.text;
+              throw initialModelErr;
             }
+          }
+
+          if (!geminiStream) {
+            throw new Error("Failed to initialize Gemini stream");
+          }
+
+          let lastEmitTime = 0; // throttle thought emissions
+
+          for await (const chunk of geminiStream) {
+            const parts = chunk.candidates?.[0]?.content?.parts ?? [];
+
+            for (const part of parts) {
+              if (!part.text) continue;
+
+              if (part.thought) {
+                // Extract just the short label — not the full wall of text
+                const now = Date.now();
+                if (now - lastEmitTime > 600) {
+                  const label = extractThoughtLabel(part.text);
+                  if (label) {
+                    enqueue(sseEvent("status", { message: label }));
+                    lastEmitTime = now;
+                  }
+                }
+              } else {
+                // Actual JSON output
+                accumulated += part.text;
+              }
+            }
+          }
+        } catch (geminiError: unknown) {
+          const geminiMsg =
+            geminiError instanceof Error ? geminiError.message : String(geminiError);
+          console.warn(
+            `\n[gen-ai-code] ⚠️ Gemini failed (${geminiMsg}). Checking Groq API fallback...`
+          );
+
+          if (getGroqApiKey()) {
+            usedProvider = "groq";
+            console.log(
+              `[gen-ai-code] 🚀 Seamlessly generating with Groq AI (model: ${DEFAULT_GROQ_MODEL})...`
+            );
+            enqueue(sseEvent("status", { message: "Generating with Groq AI…" }));
+            accumulated = await generateGroqCodeStream({
+              model: DEFAULT_GROQ_MODEL,
+              systemPrompt: SYSTEM_PROMPT,
+              messages,
+              fileData: fileData ?? null,
+              signal: request.signal,
+              onStatus: (msg) => enqueue(sseEvent("status", { message: msg })),
+            });
+            console.log(`[gen-ai-code] ✅ Groq response received (${accumulated.length} chars)`);
+          } else {
+            throw geminiError;
           }
         }
 
         // ── Parse and validate the complete JSON response with Zod 4 ─────────
-
-        let cleanJson = accumulated.trim();
-        const jsonBlockMatch = cleanJson.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
-        if (jsonBlockMatch && jsonBlockMatch[1]) {
-          cleanJson = jsonBlockMatch[1].trim();
-        } else {
-          cleanJson = cleanJson
-            .replace(/^```json\s*/i, "")
-            .replace(/^```\s*/i, "")
-            .replace(/\s*```$/i, "")
-            .trim();
-        }
-
-        const firstBrace = cleanJson.indexOf("{");
-        const lastBrace = cleanJson.lastIndexOf("}");
-        if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
-          cleanJson = cleanJson.substring(firstBrace, lastBrace + 1);
-        }
-
-        let rawParsed: unknown;
-        try {
-          rawParsed = JSON.parse(cleanJson);
-        } catch {
-          console.error("[gen-ai-code] Failed to parse JSON:", cleanJson);
+        const jsonResult = extractAndParseJson(accumulated);
+        if (!jsonResult.success || !jsonResult.data) {
+          console.error(
+            "\n" +
+              "═".repeat(70) + "\n" +
+              "❌ [gen-ai-code] JSON Parse Error\n" +
+              `Details: ${jsonResult.error}\n` +
+              `Total Length: ${accumulated.length} characters\n` +
+              `Accumulated Raw Preview (first 250 chars):\n${accumulated.slice(0, 250)}\n` +
+              `Accumulated Raw Preview (last 250 chars):\n${accumulated.slice(-250)}\n` +
+              "═".repeat(70) + "\n"
+          );
           enqueue(
             sseEvent("error", {
-              message: "AI returned invalid JSON. Please try again.",
+              message: "AI response was incomplete or formatted incorrectly. Please try again.",
             })
           );
           controller.close();
           return;
         }
 
+        const rawParsed = jsonResult.data;
+
         const aiValidation = aiGeneratedCodeSchema.safeParse(rawParsed);
         if (!aiValidation.success) {
           console.error(
-            "[gen-ai-code] AI validation failed:",
-            aiValidation.error.issues,
-            "rawParsed:",
-            JSON.stringify(rawParsed, null, 2)
+            "\n" +
+              "═".repeat(70) + "\n" +
+              "❌ [gen-ai-code] AI Schema Validation Failed\n" +
+              `Issues: ${JSON.stringify(aiValidation.error.issues, null, 2)}\n` +
+              `Raw Parsed: ${JSON.stringify(rawParsed, null, 2).slice(0, 500)}\n` +
+              "═".repeat(70) + "\n"
           );
           enqueue(
             sseEvent("error", {
@@ -364,6 +455,10 @@ export async function POST(request: NextRequest) {
           }
         }
 
+        console.log(
+          `[gen-ai-code] ✅ Generation successful (${usedProvider.toUpperCase()}) | Workspace ID: ${workspace.id} | Title: "${newFileData.title || "Untitled"}" | Files: ${Object.keys(newFileData.files).length}`
+        );
+
         // ── Emit final result ──────────────────────────────────────────────────
 
         enqueue(
@@ -378,10 +473,18 @@ export async function POST(request: NextRequest) {
           request.signal.aborted ||
           (err instanceof Error && err.name === "AbortError")
         ) {
+          console.log("[gen-ai-code] ⏹️ Generation aborted by client.");
           return;
         }
 
-        console.error("[gen-ai-code] stream error:", err);
+        console.error(
+          "\n" +
+            "═".repeat(70) + "\n" +
+            "❌ [gen-ai-code] Stream Error\n" +
+            `Message: ${err instanceof Error ? err.message : String(err)}\n` +
+            `Stack: ${err instanceof Error ? err.stack : "N/A"}\n` +
+            "═".repeat(70) + "\n"
+        );
 
         let errorMessage = "Something went wrong. Please try again.";
         if (err instanceof Error) {

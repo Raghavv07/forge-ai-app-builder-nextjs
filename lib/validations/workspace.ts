@@ -126,9 +126,9 @@ export type ImportWorkspaceData = z.infer<typeof importWorkspaceSchema>;
 // schema.validate(value) evaluates schema checks without allocating error trees
 
 export function isMessage(value: unknown): value is Message {
-  return messageSchema.validate(value);
+  return messageSchema.safeParse(value).success;
 }
 
 export function isFileData(value: unknown): value is FileData {
-  return fileDataSchema.validate(value);
+  return fileDataSchema.safeParse(value).success;
 }

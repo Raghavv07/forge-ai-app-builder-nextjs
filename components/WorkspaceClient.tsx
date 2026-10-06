@@ -145,8 +145,12 @@ export function WorkspaceClient({
         });
 
         if (res.status === 429) {
-          toast.error("Too many requests. Please slow down.");
-          setMessages((prev) => prev.slice(0, -1));
+          const msg = "Too many requests. Please wait a minute before trying again.";
+          toast.error(msg);
+          setMessages((prev) => [
+            ...prev,
+            { role: "assistant", content: `⚠️ ${msg}` },
+          ]);
           return;
         }
         if (!res.ok || !res.body) {
@@ -190,8 +194,12 @@ export function WorkspaceClient({
                   `/workspace?id=${event.workspaceId}`
                 );
               } else if (event.type === "error") {
-                toast.error(event.message || "Generation failed. Please try again.");
-                setMessages((prev) => prev.slice(0, -1));
+                const errMsg = event.message || "Generation failed. Please try again.";
+                toast.error(errMsg);
+                setMessages((prev) => [
+                  ...prev,
+                  { role: "assistant", content: `⚠️ ${errMsg}` },
+                ]);
                 return;
               }
             } catch {
@@ -218,8 +226,12 @@ export function WorkspaceClient({
                 `/workspace?id=${event.workspaceId}`
               );
             } else if (event.type === "error") {
-              toast.error(event.message || "Generation failed. Please try again.");
-              setMessages((prev) => prev.slice(0, -1));
+              const errMsg = event.message || "Generation failed. Please try again.";
+              toast.error(errMsg);
+              setMessages((prev) => [
+                ...prev,
+                { role: "assistant", content: `⚠️ ${errMsg}` },
+              ]);
               return;
             }
           } catch {
@@ -227,16 +239,21 @@ export function WorkspaceClient({
           }
         }
       } catch (err) {
-        // User-initiated stop — silently roll back the user message
+        // User-initiated stop
         if (err instanceof Error && err.name === "AbortError") {
-          setMessages((prev) => prev.slice(0, -1));
+          setMessages((prev) => [
+            ...prev,
+            { role: "assistant", content: "⏹️ Generation stopped." },
+          ]);
           return;
         }
         console.warn("[WorkspaceClient] Generation error:", err instanceof Error ? err.message : err);
-        toast.error(
-          err instanceof Error ? err.message : "Something went wrong."
-        );
-        setMessages((prev) => prev.slice(0, -1));
+        const errMsg = err instanceof Error ? err.message : "Something went wrong.";
+        toast.error(errMsg);
+        setMessages((prev) => [
+          ...prev,
+          { role: "assistant", content: `⚠️ ${errMsg}` },
+        ]);
       } finally {
         generateAbortRef.current = null;
         setIsGenerating(false);
@@ -343,8 +360,16 @@ export function WorkspaceClient({
                   return updated;
                 });
               } else if (event.type === "error") {
-                toast.error(event.message || "Improve failed. Please try again.");
-                setMessages((prev) => prev.slice(0, -2));
+                const errMsg = event.message || "Improve failed. Please try again.";
+                toast.error(errMsg);
+                setMessages((prev) => {
+                  const updated = [...prev];
+                  updated[updated.length - 1] = {
+                    role: "assistant",
+                    content: `⚠️ ${errMsg}`,
+                  };
+                  return updated;
+                });
                 return;
               }
             } catch {
@@ -368,8 +393,16 @@ export function WorkspaceClient({
                 return updated;
               });
             } else if (event.type === "error") {
-              toast.error(event.message || "Improve failed. Please try again.");
-              setMessages((prev) => prev.slice(0, -2));
+              const errMsg = event.message || "Improve failed. Please try again.";
+              toast.error(errMsg);
+              setMessages((prev) => {
+                const updated = [...prev];
+                updated[updated.length - 1] = {
+                  role: "assistant",
+                  content: `⚠️ ${errMsg}`,
+                };
+                return updated;
+              });
               return;
             }
           } catch {
@@ -377,14 +410,29 @@ export function WorkspaceClient({
           }
         }
       } catch (err) {
-        // User-initiated stop — silently roll back the user + placeholder messages
+        // User-initiated stop — roll back or mark stopped
         if (err instanceof Error && err.name === "AbortError") {
-          setMessages((prev) => prev.slice(0, -2));
+          setMessages((prev) => {
+            const updated = [...prev];
+            updated[updated.length - 1] = {
+              role: "assistant",
+              content: "⏹️ Improvement stopped.",
+            };
+            return updated;
+          });
           return;
         }
         console.warn("[WorkspaceClient] Improve error:", err instanceof Error ? err.message : err);
-        toast.error(err instanceof Error ? err.message : "Improve failed.");
-        setMessages((prev) => prev.slice(0, -2));
+        const errMsg = err instanceof Error ? err.message : "Improve failed.";
+        toast.error(errMsg);
+        setMessages((prev) => {
+          const updated = [...prev];
+          updated[updated.length - 1] = {
+            role: "assistant",
+            content: `⚠️ ${errMsg}`,
+          };
+          return updated;
+        });
       } finally {
         improveAbortRef.current = null;
         setIsImproving(false);
